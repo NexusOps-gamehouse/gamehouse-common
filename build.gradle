@@ -1,0 +1,21 @@
+// 라이브러리 모듈. 실행 가능한 jar 를 만들지 않는다.
+apply plugin: 'java-library'
+
+dependencies {
+    api 'org.springframework.boot:spring-boot-starter-web'
+    api 'org.springframework.boot:spring-boot-starter-security'
+    api 'org.springframework.boot:spring-boot-starter-validation'
+    api 'org.springframework.boot:spring-boot-starter-actuator'
+    api 'io.micrometer:micrometer-registry-prometheus'
+
+    /*
+     * 서비스 간 이벤트 배달. 프로세스가 나뉘면 Spring ApplicationEvent 로는
+     * 상대에게 닿지 않는다 — 같은 JVM 안에서만 도는 구조라서.
+     * 브로커를 거쳐야 post 프로세스의 발행이 chat 프로세스에 도착한다.
+     */
+    api 'org.springframework.boot:spring-boot-starter-amqp'
+
+    api 'io.jsonwebtoken:jjwt-api:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+}
