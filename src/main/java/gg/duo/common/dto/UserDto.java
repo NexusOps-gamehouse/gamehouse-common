@@ -17,8 +17,8 @@ public record UserDto(
         String email,
         String nickname,
         String profileImageUrl,
-        String gender,
-        String ageRange,
+        /** [FR-01] 나이대 구간 대신 숫자 나이. 미입력이면 null. */
+        Integer age,
         String game,
         String playStyle,
         String position,
@@ -29,6 +29,9 @@ public record UserDto(
         String riotTier,
         String riotRank,
         String playTimes,
+        String playDays,
+        /** 1회 플레이 선호 분량. ("2~4시간") */
+        String playDuration,
         String gameModes,
         String riotNickname,
         String puuid,
