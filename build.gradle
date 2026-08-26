@@ -1,7 +1,75 @@
-// 라이브러리 모듈. 실행 가능한 jar 를 만들지 않는다.
-apply plugin: 'java-library'
+/*
+ * gamehouse-common — 서비스들이 공유하는 라이브러리.
+ *
+ * 모노레포에서는 backend 루트 build.gradle 이 toolchain·BOM·컴파일 옵션을
+ * subprojects 로 일괄 적용했다. 레포가 갈라지면서 그 루트가 사라졌으므로
+ * 여기서 직접 선언한다.
+ *
+ * 실행 가능한 jar 를 만들지 않는다(java-library). 대신 GitHub Packages 로
+ * 발행해서 user/post/chat/riot/match/crew 가 의존성으로 받아 쓴다.
+ */
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = 'gg.duo'
+
+/*
+ * ⚠️ SNAPSHOT 을 쓰지 않는다.
+ *
+ * 발행자와 소비자가 서로 다른 시점의 같은 SNAPSHOT 을 물고 있어도 빌드는 성공한다.
+ * 이벤트 record 필드가 어긋난 채로 브로커까지 가고 역직렬화에서 실패한다.
+ * 고정 버전을 쓰고, 내용이 바뀌면 여기를 올린다 (0.1.0 → 0.1.1).
+ */
+version = '0.1.0'
+
+java {
+    toolchain { languageVersion = JavaLanguageVersion.of(17) }
+    // 소비하는 쪽 IDE 에서 common 코드를 눌러 들어갈 수 있게 한다
+    withSourcesJar()
+}
+
+repositories { mavenCentral() }
+
+/*
+ * -parameters 를 켠다.
+ *
+ * 이벤트 계약이 record 인데, Jackson 이 JSON → record 로 되돌리려면 생성자
+ * 파라미터 이름이 클래스 파일에 남아 있어야 한다. 기본 컴파일은 그 이름을 버린다.
+ *
+ * 모노레포에서는 루트 build.gradle 이 이걸 넣어줬다. Spring Boot 플러그인도
+ * 자동으로 붙여주지만 common 은 java-library 라 해당되지 않는다.
+ *
+ * ⚠️ 빠져도 빌드와 기동은 성공한다. 역직렬화만 런타임에 조용히 깨진다.
+ *    확인: javap -v -p -classpath build/classes/java/main \
+ *            gg.duo.common.event.PostCreatedEvent | grep -A4 MethodParameters
+ */
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs << '-parameters'
+    options.encoding = 'UTF-8'
+}
+
+// 스프링 버전은 한 곳에서만 관리한다. 서비스 레포들도 이 값을 따라간다.
+ext.springBootVersion = '3.3.5'
 
 dependencies {
+    /*
+     * Spring Boot BOM.
+     *
+     * 아래 의존성들에 버전이 없는 이유이자, 소비하는 서비스도 같은 버전 관리를
+     * 물려받게 하는 장치다(api 로 노출하므로). 서비스 쪽에서 스프링 버전을
+     * 따로 맞출 필요가 없다.
+     *
+     * ⚠️ annotationProcessor 에도 따로 걸어야 한다.
+     *    이 설정은 api/implementation 을 상속하지 않는 별개 configuration 이라
+     *    BOM 이 닿지 않고, lombok 버전이 빈 채로 조회돼 이렇게 실패한다.
+     *      Could not find org.projectlombok:lombok:
+     */
+    api                    platform("org.springframework.boot:spring-boot-dependencies:${springBootVersion}")
+    annotationProcessor    platform("org.springframework.boot:spring-boot-dependencies:${springBootVersion}")
+    testAnnotationProcessor platform("org.springframework.boot:spring-boot-dependencies:${springBootVersion}")
+
     api 'org.springframework.boot:spring-boot-starter-web'
     api 'org.springframework.boot:spring-boot-starter-security'
     api 'org.springframework.boot:spring-boot-starter-validation'
@@ -18,4 +86,45 @@ dependencies {
     api 'io.jsonwebtoken:jjwt-api:0.11.5'
     runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.11.5'
     runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.11.5'
+
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
+    testCompileOnly 'org.projectlombok:lombok'
+    testAnnotationProcessor 'org.projectlombok:lombok'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+tasks.named('test') { useJUnitPlatform() }
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            groupId = 'gg.duo'
+            /*
+             * ⚠️ artifactId 를 명시해야 한다.
+             *
+             * 생략하면 rootProject.name 을 따라 gg.duo:gamehouse-common 으로 올라가고,
+             * 서비스 쪽의 implementation 'gg.duo:common:0.1.0' 이 404 가 된다.
+             */
+            artifactId = 'common'
+            from components.java
+        }
+    }
+    repositories {
+        maven {
+            name = 'GitHubPackages'
+            url = 'https://maven.pkg.github.com/NexusOps-gamehouse/gamehouse-common'
+            /*
+             * 자격증명은 ~/.gradle/gradle.properties 에서 온다 (레포에 커밋 금지).
+             *   gpr.user=<GitHub 아이디>
+             *   gpr.key=<classic PAT · write:packages, read:packages>
+             *
+             * CI 에서는 환경변수 GITHUB_ACTOR / GITHUB_TOKEN 으로 대체된다.
+             */
+            credentials {
+                username = findProperty('gpr.user') ?: System.getenv('GITHUB_ACTOR')
+                password = findProperty('gpr.key')  ?: System.getenv('GITHUB_TOKEN')
+            }
+        }
+    }
 }
